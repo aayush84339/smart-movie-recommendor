@@ -1,11 +1,3 @@
-/*
-    CineMatch - Movie Recommendation App
-    main javascript file
-    
-    this handles all the movie search stuff and watchlist
-    uses OMDB API and Google Gemini for the mood search feature
-*/
-
 // api urls and storage keys
 const OMDB_URL = 'https://www.omdbapi.com/';
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
@@ -995,5 +987,6 @@ function init() {
 
 // run when page loads
 document.addEventListener('DOMContentLoaded', init);
+
 
 
