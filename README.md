@@ -17,23 +17,14 @@ A movie search website I made for the DevCom's developer assignment. It lets you
 - OMDB API for movie data
 - Google Gemini API for the mood search feature
 
-## How to run
-
-1. Download all the files
-2. Open `index.html` in your browser
-3. Enter your API keys when prompted
 
 ### Getting API keys
 
 **OMDB API (required):**
 - Go to https://www.omdbapi.com/apikey.aspx
-- Sign up for free key
-- Free tier gives 1000 requests/day
 
 **Gemini API (optional, for mood search):**
 - Go to https://aistudio.google.com/app/apikey
-- Create API key
-- Its free to use
 
 ## Files
 
@@ -80,6 +71,7 @@ The optimizer uses efficiency = rating / runtime to decide which movies are leas
 - No backup: If browser data is cleared, watchlist is gone
 
 ---
+
 
 
 
