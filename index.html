@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Smart Movie Recommendation Tool - Search movies by name, actor, or mood. Manage your weekend watchlist with our optimizer.">
+    
+    <title>CineMatch - Smart Movie Recommendations</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Custom Stylesheet -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- ============================================
+         API Configuration Modal
+         Shows on first load if API keys not configured
+    ============================================ -->
+    <div id="apiConfigModal" class="modal">
+        <div class="modal-content api-config-modal">
+            <div class="modal-header">
+                <h2>🔐 Configure API Keys</h2>
+                <p>Enter your API keys to enable all features</p>
+            </div>
+            <div class="modal-body">
+                <!-- OMDB API Key Input -->
+                <div class="form-group">
+                    <label for="omdbApiKey">
+                        <span class="label-icon">🎬</span>
+                        OMDB API Key
+                    </label>
+                    <input type="text" id="omdbApiKey" placeholder="Enter your OMDB API key">
+                    <p class="form-help">
+                        Get a free key at <a href="https://www.omdbapi.com/apikey.aspx" target="_blank">omdbapi.com</a>
+                    </p>
+                </div>
+                
+                <!-- Gemini API Key Input -->
+                <div class="form-group">
+                    <label for="geminiApiKey">
+                        <span class="label-icon">🤖</span>
+                        Google Gemini API Key
+                    </label>
+                    <input type="text" id="geminiApiKey" placeholder="Enter your Gemini API key">
+                    <p class="form-help">
+                        Get a free key at <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a>
+                    </p>
+                </div>
+                
+                <button id="saveApiKeys" class="btn btn-primary btn-full">
+                    Save & Continue
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================
+         Main Header
+         Contains logo and settings button
+    ============================================ -->
+    <header class="main-header">
+        <div class="container">
+            <div class="header-content">
+                <!-- Logo -->
+                <div class="logo">
+                    <span class="logo-icon">🎬</span>
+                    <h1>CineMatch</h1>
+                </div>
+                
+                <!-- Navigation -->
+                <nav class="main-nav">
+                    <button id="settingsBtn" class="btn btn-ghost" title="Configure API Keys">
+                        ⚙️ Settings
+                    </button>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <!-- ============================================
+         Hero Section with Search
+         Main search interface with multiple modes
+    ============================================ -->
+    <section class="hero-section">
+        <div class="container">
+            <div class="hero-content">
+                <h2 class="hero-title">
+                    Discover Your Next <span class="gradient-text">Favorite Movie</span>
+                </h2>
+                <p class="hero-subtitle">
+                    Search by title, actor, or describe your mood — we'll find the perfect match
+                </p>
+                
+                <!-- Search Container -->
+                <div class="search-container glass-card">
+                    <!-- Search Type Tabs -->
+                    <div class="search-tabs">
+                        <button class="search-tab active" data-type="title">
+                            <span class="tab-icon">🎯</span>
+                            By Title
+                        </button>
+                        <button class="search-tab" data-type="actor">
+                            <span class="tab-icon">🎭</span>
+                            By Actor
+                        </button>
+                        <button class="search-tab" data-type="mood">
+                            <span class="tab-icon">💭</span>
+                            By Mood
+                        </button>
+                    </div>
+                    
+                    <!-- Search Input -->
+                    <div class="search-input-container">
+                        <input 
+                            type="text" 
+                            id="searchInput" 
+                            class="search-input" 
+                            placeholder="Search for movies..."
+                            autocomplete="off"
+                        >
+                        <button id="searchBtn" class="btn btn-primary search-btn">
+                            <span class="btn-text">Search</span>
+                            <span class="btn-icon">🔍</span>
+                        </button>
+                    </div>
+                    
+                    <!-- Mood hint text (shown only for mood search) -->
+                    <p id="moodHint" class="mood-hint hidden">
+                        💡 Describe how you feel: "I want something funny and light" or "Looking for a thrilling adventure"
+                    </p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Decorative background elements -->
+        <div class="hero-bg-elements">
+            <div class="bg-circle bg-circle-1"></div>
+            <div class="bg-circle bg-circle-2"></div>
+            <div class="bg-circle bg-circle-3"></div>
+        </div>
+    </section>
+
+    <!-- ============================================
+         Search Results Section
+         Grid of movie cards
+    ============================================ -->
+    <section id="resultsSection" class="results-section hidden">
+        <div class="container">
+            <div class="section-header">
+                <h3 class="section-title">
+                    <span class="title-icon">🎬</span>
+                    Search Results
+                </h3>
+                <p id="resultsCount" class="results-count"></p>
+            </div>
+            
+            <!-- Movie Results Grid -->
+            <div id="resultsGrid" class="movies-grid">
+                <!-- Movie cards will be dynamically inserted here -->
+            </div>
+            
+            <!-- Loading State -->
+            <div id="resultsLoader" class="loader-container hidden">
+                <div class="loader">
+                    <div class="loader-spinner"></div>
+                    <p>Searching for movies...</p>
+                </div>
+            </div>
+            
+            <!-- No Results Message -->
+            <div id="noResults" class="no-results hidden">
+                <span class="no-results-icon">🎭</span>
+                <h4>No movies found</h4>
+                <p>Try a different search term or change the search type</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============================================
+         Movie Details Modal
+         Full movie information overlay
+    ============================================ -->
+    <div id="movieModal" class="modal">
+        <div class="modal-content movie-details-modal">
+            <button id="closeModal" class="modal-close">&times;</button>
+            
+            <div id="movieDetailsContent" class="movie-details">
+                <!-- Movie details will be dynamically inserted here -->
+            </div>
+            
+            <!-- Similar Movies Section -->
+            <div id="similarMoviesSection" class="similar-movies-section">
+                <h4 class="similar-title">
+                    <span class="title-icon">✨</span>
+                    Similar Movies You Might Like
+                </h4>
+                <div id="similarMoviesGrid" class="similar-movies-grid">
+                    <!-- Similar movies will be dynamically inserted here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================
+         Weekend Movie Optimizer Section
+         Watchlist management and optimization
+    ============================================ -->
+    <section class="optimizer-section">
+        <div class="container">
+            <div class="section-header">
+                <h3 class="section-title">
+                    <span class="title-icon">📅</span>
+                    Weekend Movie Optimizer
+                </h3>
+                <p class="section-subtitle">
+                    Plan your perfect movie marathon — we'll help you fit everything in
+                </p>
+            </div>
+            
+            <div class="optimizer-container">
+                <!-- Watchlist Panel -->
+                <div class="watchlist-panel glass-card">
+                    <div class="panel-header">
+                        <h4>
+                            <span class="panel-icon">📋</span>
+                            Your Watchlist
+                        </h4>
+                        <span id="watchlistCount" class="watchlist-badge">0 movies</span>
+                    </div>
+                    
+                    <!-- Watchlist Items -->
+                    <div id="watchlistContainer" class="watchlist-container">
+                        <div id="emptyWatchlist" class="empty-watchlist">
+                            <span class="empty-icon">🍿</span>
+                            <p>Your watchlist is empty</p>
+                            <p class="empty-hint">Search for movies and add them to your list</p>
+                        </div>
+                        
+                        <ul id="watchlistItems" class="watchlist-items">
+                            <!-- Watchlist items will be dynamically inserted here -->
+                        </ul>
+                    </div>
+                    
+                    <!-- Total Runtime Display -->
+                    <div id="runtimeDisplay" class="runtime-display hidden">
+                        <div class="runtime-label">Total Runtime</div>
+                        <div id="totalRuntime" class="runtime-value">0 min</div>
+                    </div>
+                </div>
+                
+                <!-- Optimizer Panel -->
+                <div class="optimizer-panel glass-card">
+                    <div class="panel-header">
+                        <h4>
+                            <span class="panel-icon">⏰</span>
+                            Time Optimizer
+                        </h4>
+                    </div>
+                    
+                    <div class="optimizer-form">
+                        <div class="form-group">
+                            <label for="availableTime">Available Time (hours)</label>
+                            <div class="time-input-wrapper">
+                                <input 
+                                    type="number" 
+                                    id="availableTime" 
+                                    min="0" 
+                                    step="0.5" 
+                                    placeholder="e.g., 8"
+                                    value=""
+                                >
+                                <span class="time-unit">hours</span>
+                            </div>
+                            <p class="form-help">Enter your total available viewing time for the weekend</p>
+                        </div>
+                        
+                        <button id="optimizeBtn" class="btn btn-primary btn-full">
+                            <span class="btn-icon">🎯</span>
+                            Optimize My Watchlist
+                        </button>
+                    </div>
+                    
+                    <!-- Optimization Results -->
+                    <div id="optimizationResults" class="optimization-results hidden">
+                        <!-- Results will be dynamically inserted here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============================================
+         Footer
+    ============================================ -->
+    <footer class="main-footer">
+        <div class="container">
+            <div class="footer-content">
+                <p class="footer-text">
+                    Powered by <a href="https://www.omdbapi.com/" target="_blank">OMDB API</a> 
+                    & <a href="https://ai.google.dev/" target="_blank">Google Gemini</a>
+                </p>
+                <p class="footer-copyright">
+                    © 2024 CineMatch. Built with ❤️ for movie lovers.
+                </p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Toast Notifications Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Main JavaScript File -->
+    <script src="app.js"></script>
+</body>
+</html>
