@@ -74,12 +74,7 @@ The optimizer uses efficiency = rating / runtime to decide which movies are leas
 - Mood search needs Gemini API key to work well
 - Some movies don't have runtime info
 
-## Credits
-
-- Movie data from OMDB API
-- AI features from Google Gemini
-- Fonts from Google Fonts
-
 ---
+
 
 
