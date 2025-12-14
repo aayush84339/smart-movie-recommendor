@@ -1,326 +1,226 @@
-/**
- * ============================================
- * CineMatch - Smart Movie Recommendation Tool
- * Main JavaScript Application
- * ============================================
- * 
- * This application provides:
- * - Movie search by title, actor, or mood
- * - Movie details display with similar movie suggestions
- * - Weekend movie optimizer with watchlist management
- * 
- * APIs Used:
- * - OMDB API for movie data
- * - Google Gemini API for mood-based keyword extraction
- */
+/*
+    CineMatch - Movie Recommendation App
+    main javascript file
+    
+    this handles all the movie search stuff and watchlist
+    uses OMDB API and Google Gemini for the mood search feature
+*/
 
-// ============================================
-// Configuration & Constants
-// ============================================
+// api urls and storage keys
+const OMDB_URL = 'https://www.omdbapi.com/';
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
-/**
- * API Configuration
- * Keys are stored in localStorage for persistence
- */
-const CONFIG = {
-    OMDB_BASE_URL: 'https://www.omdbapi.com/',
-    GEMINI_BASE_URL: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
-    STORAGE_KEYS: {
-        OMDB_API_KEY: 'cinematch_omdb_key',
-        GEMINI_API_KEY: 'cinematch_gemini_key',
-        WATCHLIST: 'cinematch_watchlist'
-    }
-};
+// localstorage keys
+const OMDB_KEY = 'cinematch_omdb_key';
+const GEMINI_KEY = 'cinematch_gemini_key';
+const WATCHLIST_KEY = 'cinematch_watchlist';
 
-/**
- * Placeholder messages for different search types
- */
-const SEARCH_PLACEHOLDERS = {
+// placeholder text for search
+const placeholders = {
     title: 'Search for movies by title...',
     actor: 'Search movies by actor name...',
     mood: 'Describe your mood (e.g., "I want something funny and light")...'
 };
 
-// ============================================
-// State Management
-// ============================================
+// app state - stores current data
+var searchType = 'title'; // can be title, actor, or mood
+var movies = []; // search results go here
+var currentMovie = null; // selected movie for modal
+var watchlist = []; // user's watchlist
+var loading = false;
 
-/**
- * Application State
- * Holds the current state of the application
- */
-const state = {
-    currentSearchType: 'title',
-    searchResults: [],
-    selectedMovie: null,
-    watchlist: [],
-    isLoading: false
-};
+// grab all the elements we need
+var apiModal = document.getElementById('apiConfigModal');
+var omdbInput = document.getElementById('omdbApiKey');
+var geminiInput = document.getElementById('geminiApiKey');
+var saveKeysBtn = document.getElementById('saveApiKeys');
+var settingsBtn = document.getElementById('settingsBtn');
 
-// ============================================
-// DOM Element References
-// ============================================
+var searchTabs = document.querySelectorAll('.search-tab');
+var searchInput = document.getElementById('searchInput');
+var searchBtn = document.getElementById('searchBtn');
+var moodHint = document.getElementById('moodHint');
 
-/**
- * Cache DOM element references for better performance
- */
-const elements = {
-    // API Config Modal
-    apiConfigModal: document.getElementById('apiConfigModal'),
-    omdbApiKeyInput: document.getElementById('omdbApiKey'),
-    geminiApiKeyInput: document.getElementById('geminiApiKey'),
-    saveApiKeysBtn: document.getElementById('saveApiKeys'),
-    settingsBtn: document.getElementById('settingsBtn'),
+var resultsSection = document.getElementById('resultsSection');
+var resultsGrid = document.getElementById('resultsGrid');
+var resultsCount = document.getElementById('resultsCount');
+var loader = document.getElementById('resultsLoader');
+var noResults = document.getElementById('noResults');
 
-    // Search Elements
-    searchTabs: document.querySelectorAll('.search-tab'),
-    searchInput: document.getElementById('searchInput'),
-    searchBtn: document.getElementById('searchBtn'),
-    moodHint: document.getElementById('moodHint'),
+var movieModal = document.getElementById('movieModal');
+var closeModalBtn = document.getElementById('closeModal');
+var movieDetails = document.getElementById('movieDetailsContent');
+var similarSection = document.getElementById('similarMoviesSection');
+var similarGrid = document.getElementById('similarMoviesGrid');
 
-    // Results Section
-    resultsSection: document.getElementById('resultsSection'),
-    resultsGrid: document.getElementById('resultsGrid'),
-    resultsCount: document.getElementById('resultsCount'),
-    resultsLoader: document.getElementById('resultsLoader'),
-    noResults: document.getElementById('noResults'),
+var watchlistDiv = document.getElementById('watchlistContainer');
+var emptyWatchlist = document.getElementById('emptyWatchlist');
+var watchlistUl = document.getElementById('watchlistItems');
+var watchlistCountSpan = document.getElementById('watchlistCount');
+var runtimeDiv = document.getElementById('runtimeDisplay');
+var totalRuntimeSpan = document.getElementById('totalRuntime');
 
-    // Movie Modal
-    movieModal: document.getElementById('movieModal'),
-    closeModal: document.getElementById('closeModal'),
-    movieDetailsContent: document.getElementById('movieDetailsContent'),
-    similarMoviesSection: document.getElementById('similarMoviesSection'),
-    similarMoviesGrid: document.getElementById('similarMoviesGrid'),
+var timeInput = document.getElementById('availableTime');
+var optimizeBtn = document.getElementById('optimizeBtn');
+var optimizeResults = document.getElementById('optimizationResults');
 
-    // Watchlist
-    watchlistContainer: document.getElementById('watchlistContainer'),
-    emptyWatchlist: document.getElementById('emptyWatchlist'),
-    watchlistItems: document.getElementById('watchlistItems'),
-    watchlistCount: document.getElementById('watchlistCount'),
-    runtimeDisplay: document.getElementById('runtimeDisplay'),
-    totalRuntime: document.getElementById('totalRuntime'),
+var toastDiv = document.getElementById('toastContainer');
 
-    // Optimizer
-    availableTimeInput: document.getElementById('availableTime'),
-    optimizeBtn: document.getElementById('optimizeBtn'),
-    optimizationResults: document.getElementById('optimizationResults'),
+// helper functions
 
-    // Toast Container
-    toastContainer: document.getElementById('toastContainer')
-};
-
-// ============================================
-// Utility Functions
-// ============================================
-
-/**
- * Get API key from localStorage
- * @param {string} keyName - The storage key name
- * @returns {string|null} - The API key or null if not found
- */
-function getApiKey(keyName) {
-    return localStorage.getItem(keyName);
+// get api key from storage
+function getKey(name) {
+    return localStorage.getItem(name);
 }
 
-/**
- * Set API key in localStorage
- * @param {string} keyName - The storage key name
- * @param {string} value - The API key value
- */
-function setApiKey(keyName, value) {
-    localStorage.setItem(keyName, value);
+// save api key
+function saveKey(name, val) {
+    localStorage.setItem(name, val);
 }
 
-/**
- * Check if API keys are configured
- * @returns {boolean} - True if both keys are configured
- */
-function areApiKeysConfigured() {
-    const omdbKey = getApiKey(CONFIG.STORAGE_KEYS.OMDB_API_KEY);
-    const geminiKey = getApiKey(CONFIG.STORAGE_KEYS.GEMINI_API_KEY);
-    return omdbKey && omdbKey.trim() !== '';
+// check if api keys exist
+function hasApiKeys() {
+    var key = getKey(OMDB_KEY);
+    return key && key.trim() !== '';
 }
 
-/**
- * Show toast notification
- * @param {string} message - The message to display
- * @param {string} type - The type of toast (success, error, warning, info)
- */
-function showToast(message, type = 'info') {
-    const icons = {
+// show a toast message
+function toast(msg, type) {
+    type = type || 'info';
+
+    var icons = {
         success: '✅',
         error: '❌',
         warning: '⚠️',
         info: 'ℹ️'
     };
 
-    const toast = document.createElement('div');
-    toast.className = `toast toast-${type}`;
-    toast.innerHTML = `
-        <span class="toast-icon">${icons[type]}</span>
-        <span class="toast-message">${message}</span>
-    `;
+    var t = document.createElement('div');
+    t.className = 'toast toast-' + type;
+    t.innerHTML = '<span class="toast-icon">' + icons[type] + '</span><span class="toast-message">' + msg + '</span>';
 
-    elements.toastContainer.appendChild(toast);
+    toastDiv.appendChild(t);
 
-    // Auto remove after 4 seconds
-    setTimeout(() => {
-        toast.style.animation = 'slideOut 0.3s ease forwards';
-        setTimeout(() => toast.remove(), 300);
+    // remove after 4 sec
+    setTimeout(function () {
+        t.style.animation = 'slideOut 0.3s ease forwards';
+        setTimeout(function () { t.remove(); }, 300);
     }, 4000);
 }
 
-/**
- * Format runtime from minutes to hours and minutes
- * @param {number} minutes - Runtime in minutes
- * @returns {string} - Formatted runtime string
- */
-function formatRuntime(minutes) {
-    if (minutes < 60) {
-        return `${minutes} min`;
+// format minutes to hours and mins
+function formatTime(mins) {
+    if (mins < 60) {
+        return mins + ' min';
     }
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+    var hrs = Math.floor(mins / 60);
+    var m = mins % 60;
+    if (m > 0) {
+        return hrs + 'h ' + m + 'm';
+    }
+    return hrs + 'h';
 }
 
-/**
- * Parse runtime string to minutes
- * @param {string} runtimeStr - Runtime string (e.g., "142 min")
- * @returns {number} - Runtime in minutes
- */
-function parseRuntime(runtimeStr) {
-    if (!runtimeStr || runtimeStr === 'N/A') return 0;
-    const match = runtimeStr.match(/(\d+)/);
-    return match ? parseInt(match[1], 10) : 0;
+// parse runtime string like "142 min" to number
+function parseTime(str) {
+    if (!str || str === 'N/A') return 0;
+    var match = str.match(/(\d+)/);
+    return match ? parseInt(match[1]) : 0;
 }
 
-/**
- * Debounce function to limit API calls
- * @param {Function} func - The function to debounce
- * @param {number} wait - The debounce delay in ms
- * @returns {Function} - The debounced function
- */
-function debounce(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
+// debounce function - prevents too many api calls
+function debounce(fn, delay) {
+    var timer;
+    return function () {
+        var args = arguments;
+        var self = this;
+        clearTimeout(timer);
+        timer = setTimeout(function () {
+            fn.apply(self, args);
+        }, delay);
     };
 }
 
-// ============================================
-// API Functions
-// ============================================
+// API FUNCTIONS
 
-/**
- * Search movies using OMDB API
- * @param {string} query - The search query
- * @param {string} type - Search type (title or actor)
- * @returns {Promise<Array>} - Array of movie results
- */
-async function searchMovies(query, type = 'title') {
-    const apiKey = getApiKey(CONFIG.STORAGE_KEYS.OMDB_API_KEY);
+// search for movies
+async function searchMovies(query, type) {
+    var apiKey = getKey(OMDB_KEY);
 
     if (!apiKey) {
-        showToast('Please configure your OMDB API key first', 'error');
-        showApiConfigModal();
+        toast('Please configure your OMDB API key first', 'error');
+        showApiModal();
         return [];
     }
 
     try {
-        let url;
+        var url = OMDB_URL + '?apikey=' + apiKey + '&s=' + encodeURIComponent(query) + '&type=movie';
 
-        if (type === 'actor') {
-            // For actor search, we search by title containing actor name
-            // OMDB doesn't have direct actor search, so we use a workaround
-            url = `${CONFIG.OMDB_BASE_URL}?apikey=${apiKey}&s=${encodeURIComponent(query)}&type=movie`;
-        } else {
-            url = `${CONFIG.OMDB_BASE_URL}?apikey=${apiKey}&s=${encodeURIComponent(query)}&type=movie`;
-        }
-
-        const response = await fetch(url);
-        const data = await response.json();
+        var resp = await fetch(url);
+        var data = await resp.json();
 
         if (data.Response === 'True') {
-            // If searching by actor, filter results by checking movie details
+            // if actor search, filter by actor name
             if (type === 'actor') {
-                const detailedMovies = await Promise.all(
-                    data.Search.slice(0, 10).map(movie => fetchMovieDetails(movie.imdbID))
+                var detailed = await Promise.all(
+                    data.Search.slice(0, 10).map(function (m) {
+                        return getMovieDetails(m.imdbID);
+                    })
                 );
 
-                // Filter movies that have the actor in the cast
-                const filteredMovies = detailedMovies.filter(movie =>
-                    movie && movie.Actors &&
-                    movie.Actors.toLowerCase().includes(query.toLowerCase())
-                );
+                var filtered = detailed.filter(function (m) {
+                    return m && m.Actors && m.Actors.toLowerCase().includes(query.toLowerCase());
+                });
 
-                return filteredMovies.length > 0 ? filteredMovies : data.Search;
+                return filtered.length > 0 ? filtered : data.Search;
             }
             return data.Search;
         } else {
-            console.log('OMDB API returned:', data.Error);
+            console.log('OMDB error:', data.Error);
             return [];
         }
-    } catch (error) {
-        console.error('Error searching movies:', error);
-        showToast('Failed to search movies. Please try again.', 'error');
+    } catch (err) {
+        console.error('search error:', err);
+        toast('Failed to search movies', 'error');
         return [];
     }
 }
 
-/**
- * Fetch detailed movie information
- * @param {string} imdbId - The IMDB ID of the movie
- * @returns {Promise<Object|null>} - Movie details object or null
- */
-async function fetchMovieDetails(imdbId) {
-    const apiKey = getApiKey(CONFIG.STORAGE_KEYS.OMDB_API_KEY);
+// get movie details by id
+async function getMovieDetails(id) {
+    var apiKey = getKey(OMDB_KEY);
 
     if (!apiKey) {
-        showToast('Please configure your OMDB API key first', 'error');
+        toast('Please configure your OMDB API key', 'error');
         return null;
     }
 
     try {
-        const url = `${CONFIG.OMDB_BASE_URL}?apikey=${apiKey}&i=${imdbId}&plot=full`;
-        const response = await fetch(url);
-        const data = await response.json();
+        var url = OMDB_URL + '?apikey=' + apiKey + '&i=' + id + '&plot=full';
+        var resp = await fetch(url);
+        var data = await resp.json();
 
         if (data.Response === 'True') {
             return data;
-        } else {
-            console.log('OMDB API returned:', data.Error);
-            return null;
         }
-    } catch (error) {
-        console.error('Error fetching movie details:', error);
+        return null;
+    } catch (err) {
+        console.error('details error:', err);
         return null;
     }
 }
 
-/**
- * Search for similar movies based on genre and year
- * @param {string} genre - The genre to search for
- * @param {string} year - The year of the original movie
- * @param {string} excludeId - The IMDB ID to exclude
- * @returns {Promise<Array>} - Array of similar movies
- */
-async function fetchSimilarMovies(genre, year, excludeId) {
-    const apiKey = getApiKey(CONFIG.STORAGE_KEYS.OMDB_API_KEY);
-
+// find similar movies based on genre
+async function getSimilarMovies(genre, year, excludeId) {
+    var apiKey = getKey(OMDB_KEY);
     if (!apiKey || !genre) return [];
 
     try {
-        // Get the primary genre
-        const primaryGenre = genre.split(',')[0].trim();
+        // get first genre
+        var mainGenre = genre.split(',')[0].trim();
 
-        // Search for movies with similar genre keywords
-        const genreKeywords = {
+        // map genres to search keywords
+        var keywords = {
             'Action': ['action', 'adventure', 'thriller'],
             'Comedy': ['comedy', 'funny', 'humor'],
             'Drama': ['drama', 'emotional', 'story'],
@@ -331,564 +231,428 @@ async function fetchSimilarMovies(genre, year, excludeId) {
             'Animation': ['animation', 'animated', 'cartoon']
         };
 
-        const keywords = genreKeywords[primaryGenre] || [primaryGenre.toLowerCase()];
+        var searchTerms = keywords[mainGenre] || [mainGenre.toLowerCase()];
 
-        // Search for movies using genre-related keywords
-        const searchPromises = keywords.map(keyword =>
-            fetch(`${CONFIG.OMDB_BASE_URL}?apikey=${apiKey}&s=${keyword}&type=movie`)
-                .then(res => res.json())
-        );
+        // search for each keyword
+        var promises = searchTerms.map(function (kw) {
+            return fetch(OMDB_URL + '?apikey=' + apiKey + '&s=' + kw + '&type=movie')
+                .then(function (r) { return r.json(); });
+        });
 
-        const results = await Promise.all(searchPromises);
+        var results = await Promise.all(promises);
 
-        // Combine and deduplicate results
-        const allMovies = [];
-        const seenIds = new Set([excludeId]);
+        // combine results and remove duplicates
+        var allMovies = [];
+        var seen = {};
+        seen[excludeId] = true;
 
-        for (const result of results) {
-            if (result.Response === 'True' && result.Search) {
-                for (const movie of result.Search) {
-                    if (!seenIds.has(movie.imdbID)) {
-                        seenIds.add(movie.imdbID);
-                        allMovies.push(movie);
+        for (var i = 0; i < results.length; i++) {
+            var r = results[i];
+            if (r.Response === 'True' && r.Search) {
+                for (var j = 0; j < r.Search.length; j++) {
+                    var m = r.Search[j];
+                    if (!seen[m.imdbID]) {
+                        seen[m.imdbID] = true;
+                        allMovies.push(m);
                     }
                 }
             }
         }
 
-        // Return up to 6 similar movies
         return allMovies.slice(0, 6);
-    } catch (error) {
-        console.error('Error fetching similar movies:', error);
+    } catch (err) {
+        console.error('similar movies error:', err);
         return [];
     }
 }
 
-/**
- * Use Gemini API to extract movie search keywords from mood description
- * @param {string} moodText - The user's mood description
- * @returns {Promise<string>} - Extracted keywords for movie search
- */
-async function extractMoodKeywords(moodText) {
-    const apiKey = getApiKey(CONFIG.STORAGE_KEYS.GEMINI_API_KEY);
+// use gemini to get keywords from mood text
+async function getMoodKeywords(text) {
+    var apiKey = getKey(GEMINI_KEY);
 
     if (!apiKey) {
-        // If no Gemini key, do a simple keyword extraction
-        showToast('Gemini API not configured. Using basic keyword extraction.', 'warning');
-        return extractBasicKeywords(moodText);
+        toast('Gemini API not configured, using basic search', 'warning');
+        return basicKeywords(text);
     }
 
     try {
-        const prompt = `You are a movie recommendation assistant. Based on the following mood description, suggest 2-3 specific movie search terms that would help find relevant movies. Return ONLY the search terms separated by commas, nothing else. Be specific and use actual movie genres or popular movie titles/themes.
+        var prompt = 'You are a movie recommendation assistant. Based on the following mood description, suggest 2-3 specific movie search terms that would help find relevant movies. Return ONLY the search terms separated by commas, nothing else.\n\nMood: "' + text + '"\n\nYour response:';
 
-Mood: "${moodText}"
-
-Examples:
-- "I want something funny and light" → "comedy, romantic comedy, feel good"
-- "Looking for thrilling adventure" → "action adventure, thriller, heist"
-- "Something to cry about" → "drama, emotional, tearjerker"
-
-Your response (just the keywords):`;
-
-        const response = await fetch(`${CONFIG.GEMINI_BASE_URL}?key=${apiKey}`, {
+        var resp = await fetch(GEMINI_URL + '?key=' + apiKey, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                contents: [{
-                    parts: [{
-                        text: prompt
-                    }]
-                }],
-                generationConfig: {
-                    temperature: 0.7,
-                    maxOutputTokens: 50
-                }
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { temperature: 0.7, maxOutputTokens: 50 }
             })
         });
 
-        const data = await response.json();
+        var data = await resp.json();
 
         if (data.candidates && data.candidates[0] && data.candidates[0].content) {
-            const keywords = data.candidates[0].content.parts[0].text;
-            return keywords.trim();
-        } else {
-            console.log('Gemini API response:', data);
-            return extractBasicKeywords(moodText);
+            return data.candidates[0].content.parts[0].text.trim();
         }
-    } catch (error) {
-        console.error('Error calling Gemini API:', error);
-        showToast('Gemini API error. Using basic keyword extraction.', 'warning');
-        return extractBasicKeywords(moodText);
+        return basicKeywords(text);
+    } catch (err) {
+        console.error('gemini error:', err);
+        toast('AI error, using basic keywords', 'warning');
+        return basicKeywords(text);
     }
 }
 
-/**
- * Basic keyword extraction fallback when Gemini is not available
- * @param {string} moodText - The user's mood description
- * @returns {string} - Extracted keywords
- */
-function extractBasicKeywords(moodText) {
-    const moodToGenre = {
-        'funny': 'comedy',
-        'laugh': 'comedy',
-        'humor': 'comedy',
-        'light': 'comedy',
-        'happy': 'comedy',
-        'scary': 'horror',
-        'horror': 'horror',
-        'frightening': 'horror',
-        'thriller': 'thriller',
-        'suspense': 'thriller',
-        'exciting': 'action',
-        'action': 'action',
-        'adventure': 'adventure',
-        'thrilling': 'action',
-        'romantic': 'romance',
-        'love': 'romance',
-        'romance': 'romance',
-        'emotional': 'drama',
-        'drama': 'drama',
-        'sad': 'drama',
-        'cry': 'drama',
-        'sci-fi': 'sci-fi',
-        'space': 'sci-fi',
-        'future': 'sci-fi',
-        'animated': 'animation',
-        'cartoon': 'animation',
-        'family': 'family',
-        'kids': 'family',
-        'documentary': 'documentary',
-        'mystery': 'mystery',
-        'crime': 'crime',
-        'war': 'war',
-        'historical': 'history',
-        'fantasy': 'fantasy',
-        'magic': 'fantasy'
+// backup keyword extraction if gemini fails
+function basicKeywords(text) {
+    var mapping = {
+        'funny': 'comedy', 'laugh': 'comedy', 'humor': 'comedy', 'light': 'comedy', 'happy': 'comedy',
+        'scary': 'horror', 'horror': 'horror', 'frightening': 'horror',
+        'thriller': 'thriller', 'suspense': 'thriller',
+        'exciting': 'action', 'action': 'action', 'adventure': 'adventure', 'thrilling': 'action',
+        'romantic': 'romance', 'love': 'romance', 'romance': 'romance',
+        'emotional': 'drama', 'drama': 'drama', 'sad': 'drama', 'cry': 'drama',
+        'sci-fi': 'sci-fi', 'space': 'sci-fi', 'future': 'sci-fi',
+        'animated': 'animation', 'cartoon': 'animation', 'family': 'family', 'kids': 'family',
+        'documentary': 'documentary', 'mystery': 'mystery', 'crime': 'crime',
+        'war': 'war', 'historical': 'history', 'fantasy': 'fantasy', 'magic': 'fantasy'
     };
 
-    const words = moodText.toLowerCase().split(/\s+/);
-    const genres = new Set();
+    var words = text.toLowerCase().split(/\s+/);
+    var genres = [];
 
-    for (const word of words) {
-        for (const [keyword, genre] of Object.entries(moodToGenre)) {
-            if (word.includes(keyword)) {
-                genres.add(genre);
+    for (var i = 0; i < words.length; i++) {
+        var w = words[i];
+        for (var key in mapping) {
+            if (w.includes(key) && genres.indexOf(mapping[key]) === -1) {
+                genres.push(mapping[key]);
             }
         }
     }
 
-    return genres.size > 0 ? Array.from(genres).join(', ') : 'popular';
+    return genres.length > 0 ? genres.join(', ') : 'popular';
 }
 
-// ============================================
-// Search Functions
-// ============================================
+// SEARCH HANDLING
 
-/**
- * Handle search based on current search type
- */
-async function handleSearch() {
-    const query = elements.searchInput.value.trim();
+async function doSearch() {
+    var query = searchInput.value.trim();
 
     if (!query) {
-        showToast('Please enter a search term', 'warning');
+        toast('Please enter something to search', 'warning');
         return;
     }
 
-    // Show loading state
-    showLoadingState();
-
-    let results = [];
+    showLoader();
+    var results = [];
 
     try {
-        switch (state.currentSearchType) {
-            case 'title':
-                results = await searchMovies(query, 'title');
-                break;
+        if (searchType === 'title') {
+            results = await searchMovies(query, 'title');
+        }
+        else if (searchType === 'actor') {
+            results = await searchMovies(query, 'actor');
+        }
+        else if (searchType === 'mood') {
+            toast('Analyzing your mood...', 'info');
+            var kws = await getMoodKeywords(query);
+            console.log('mood keywords:', kws);
 
-            case 'actor':
-                results = await searchMovies(query, 'actor');
-                break;
+            var kwList = kws.split(',').map(function (k) { return k.trim(); }).filter(function (k) { return k; });
+            var allResults = [];
+            var seenIds = {};
 
-            case 'mood':
-                // First, extract keywords from mood using Gemini
-                showToast('Analyzing your mood...', 'info');
-                const keywords = await extractMoodKeywords(query);
-                console.log('Extracted keywords:', keywords);
-
-                // Search for each keyword and combine results
-                const keywordList = keywords.split(',').map(k => k.trim()).filter(k => k);
-                const allResults = [];
-                const seenIds = new Set();
-
-                for (const keyword of keywordList) {
-                    const keywordResults = await searchMovies(keyword, 'title');
-                    for (const movie of keywordResults) {
-                        if (!seenIds.has(movie.imdbID)) {
-                            seenIds.add(movie.imdbID);
-                            allResults.push(movie);
-                        }
+            for (var i = 0; i < kwList.length; i++) {
+                var kwResults = await searchMovies(kwList[i], 'title');
+                for (var j = 0; j < kwResults.length; j++) {
+                    var m = kwResults[j];
+                    if (!seenIds[m.imdbID]) {
+                        seenIds[m.imdbID] = true;
+                        allResults.push(m);
                     }
                 }
+            }
 
-                results = allResults.slice(0, 20); // Limit to 20 results
-                break;
+            results = allResults.slice(0, 20);
         }
 
-        state.searchResults = results;
-        displaySearchResults(results);
-
-    } catch (error) {
-        console.error('Search error:', error);
-        showToast('An error occurred during search', 'error');
-        hideLoadingState();
+        movies = results;
+        showResults(results);
+    } catch (err) {
+        console.error('search failed:', err);
+        toast('Something went wrong', 'error');
+        hideLoader();
     }
 }
 
-/**
- * Display search results in the grid
- * @param {Array} movies - Array of movie objects
- */
-function displaySearchResults(movies) {
-    hideLoadingState();
+// display search results
+function showResults(movieList) {
+    hideLoader();
 
-    if (!movies || movies.length === 0) {
-        elements.resultsGrid.innerHTML = '';
-        elements.noResults.classList.remove('hidden');
-        elements.resultsSection.classList.remove('hidden');
-        elements.resultsCount.textContent = 'No results found';
+    if (!movieList || movieList.length === 0) {
+        resultsGrid.innerHTML = '';
+        noResults.classList.remove('hidden');
+        resultsSection.classList.remove('hidden');
+        resultsCount.textContent = 'No results found';
         return;
     }
 
-    elements.noResults.classList.add('hidden');
-    elements.resultsSection.classList.remove('hidden');
-    elements.resultsCount.textContent = `Found ${movies.length} movie${movies.length !== 1 ? 's' : ''}`;
+    noResults.classList.add('hidden');
+    resultsSection.classList.remove('hidden');
+    resultsCount.textContent = 'Found ' + movieList.length + ' movie' + (movieList.length !== 1 ? 's' : '');
 
-    // Generate movie cards HTML
-    const cardsHTML = movies.map(movie => createMovieCard(movie)).join('');
-    elements.resultsGrid.innerHTML = cardsHTML;
+    // build movie cards
+    var html = '';
+    for (var i = 0; i < movieList.length; i++) {
+        html += makeMovieCard(movieList[i]);
+    }
+    resultsGrid.innerHTML = html;
 
-    // Add click event listeners to movie cards
-    document.querySelectorAll('.movie-card').forEach(card => {
-        card.addEventListener('click', (e) => {
-            // Don't open modal if clicking the watchlist button
+    // add click handlers
+    var cards = document.querySelectorAll('.movie-card');
+    for (var i = 0; i < cards.length; i++) {
+        cards[i].addEventListener('click', function (e) {
             if (e.target.closest('.add-watchlist-btn')) return;
-
-            const imdbId = card.dataset.imdbId;
-            openMovieDetails(imdbId);
+            openMovie(this.dataset.imdbId);
         });
-    });
+    }
 
-    // Add click event listeners to watchlist buttons
-    document.querySelectorAll('.add-watchlist-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
+    // watchlist button handlers
+    var btns = document.querySelectorAll('.add-watchlist-btn');
+    for (var i = 0; i < btns.length; i++) {
+        btns[i].addEventListener('click', function (e) {
             e.stopPropagation();
-            const imdbId = btn.dataset.imdbId;
-            handleAddToWatchlist(imdbId, btn);
+            addToWatchlist(this.dataset.imdbId, this);
         });
-    });
+    }
 }
 
-/**
- * Create HTML for a movie card
- * @param {Object} movie - Movie object
- * @returns {string} - HTML string for the movie card
- */
-function createMovieCard(movie) {
-    const isInWatchlist = state.watchlist.some(m => m.imdbID === movie.imdbID);
-    const posterHtml = movie.Poster && movie.Poster !== 'N/A'
-        ? `<img src="${movie.Poster}" alt="${movie.Title}">`
-        : `<div class="no-poster">🎬</div>`;
+// create html for movie card
+function makeMovieCard(movie) {
+    var inList = watchlist.some(function (m) { return m.imdbID === movie.imdbID; });
 
-    // Handle rating - might be in different formats
-    const rating = movie.imdbRating || movie.Rating || '';
-    const ratingHtml = rating && rating !== 'N/A'
-        ? `<span class="movie-card-rating">⭐ ${rating}</span>`
+    var poster = movie.Poster && movie.Poster !== 'N/A'
+        ? '<img src="' + movie.Poster + '" alt="' + movie.Title + '">'
+        : '<div class="no-poster">🎬</div>';
+
+    var rating = movie.imdbRating || movie.Rating || '';
+    var ratingHtml = rating && rating !== 'N/A'
+        ? '<span class="movie-card-rating">⭐ ' + rating + '</span>'
         : '';
 
-    return `
-        <div class="movie-card" data-imdb-id="${movie.imdbID}">
-            <div class="movie-card-poster">
-                ${posterHtml}
-                <div class="movie-card-overlay"></div>
-                <div class="movie-card-actions">
-                    <button class="add-watchlist-btn ${isInWatchlist ? 'added' : ''}" 
-                            data-imdb-id="${movie.imdbID}">
-                        ${isInWatchlist ? '✓ In Watchlist' : '+ Watchlist'}
-                    </button>
-                </div>
-            </div>
-            <div class="movie-card-info">
-                <h4 class="movie-card-title">${movie.Title}</h4>
-                <div class="movie-card-meta">
-                    <span class="movie-card-year">${movie.Year}</span>
-                    ${ratingHtml}
-                </div>
-            </div>
-        </div>
-    `;
+    return '<div class="movie-card" data-imdb-id="' + movie.imdbID + '">' +
+        '<div class="movie-card-poster">' + poster +
+        '<div class="movie-card-overlay"></div>' +
+        '<div class="movie-card-actions">' +
+        '<button class="add-watchlist-btn ' + (inList ? 'added' : '') + '" data-imdb-id="' + movie.imdbID + '">' +
+        (inList ? '✓ In Watchlist' : '+ Watchlist') +
+        '</button></div></div>' +
+        '<div class="movie-card-info">' +
+        '<h4 class="movie-card-title">' + movie.Title + '</h4>' +
+        '<div class="movie-card-meta">' +
+        '<span class="movie-card-year">' + movie.Year + '</span>' +
+        ratingHtml +
+        '</div></div></div>';
 }
 
-/**
- * Show loading state
- */
-function showLoadingState() {
-    state.isLoading = true;
-    elements.resultsSection.classList.remove('hidden');
-    elements.resultsGrid.innerHTML = '';
-    elements.noResults.classList.add('hidden');
-    elements.resultsLoader.classList.remove('hidden');
+function showLoader() {
+    loading = true;
+    resultsSection.classList.remove('hidden');
+    resultsGrid.innerHTML = '';
+    noResults.classList.add('hidden');
+    loader.classList.remove('hidden');
 }
 
-/**
- * Hide loading state
- */
-function hideLoadingState() {
-    state.isLoading = false;
-    elements.resultsLoader.classList.add('hidden');
+function hideLoader() {
+    loading = false;
+    loader.classList.add('hidden');
 }
 
-// ============================================
-// Movie Details Modal Functions
-// ============================================
+// MOVIE DETAILS MODAL
 
-/**
- * Open movie details modal
- * @param {string} imdbId - The IMDB ID of the movie
- */
-async function openMovieDetails(imdbId) {
-    // Show modal with loading state
-    elements.movieModal.classList.add('active');
-    elements.movieDetailsContent.innerHTML = `
-        <div class="loader-container">
-            <div class="loader">
-                <div class="loader-spinner"></div>
-                <p>Loading movie details...</p>
-            </div>
-        </div>
-    `;
-    elements.similarMoviesSection.classList.add('hidden');
+async function openMovie(id) {
+    movieModal.classList.add('active');
+    movieDetails.innerHTML = '<div class="loader-container"><div class="loader"><div class="loader-spinner"></div><p>Loading...</p></div></div>';
+    similarSection.classList.add('hidden');
 
-    // Fetch movie details
-    const movie = await fetchMovieDetails(imdbId);
+    var movie = await getMovieDetails(id);
 
     if (!movie) {
-        elements.movieDetailsContent.innerHTML = `
-            <div class="no-results">
-                <span class="no-results-icon">😕</span>
-                <h4>Failed to load movie details</h4>
-                <p>Please try again later</p>
-            </div>
-        `;
+        movieDetails.innerHTML = '<div class="no-results"><span class="no-results-icon">😕</span><h4>Failed to load</h4><p>Try again later</p></div>';
         return;
     }
 
-    state.selectedMovie = movie;
+    currentMovie = movie;
+    displayMovie(movie);
 
-    // Display movie details
-    displayMovieDetails(movie);
-
-    // Fetch and display similar movies
-    const similarMovies = await fetchSimilarMovies(movie.Genre, movie.Year, movie.imdbID);
-    displaySimilarMovies(similarMovies);
+    // get similar movies
+    var similar = await getSimilarMovies(movie.Genre, movie.Year, movie.imdbID);
+    showSimilar(similar);
 }
 
-/**
- * Display movie details in the modal
- * @param {Object} movie - Movie details object
- */
-function displayMovieDetails(movie) {
-    const posterHtml = movie.Poster && movie.Poster !== 'N/A'
-        ? `<img src="${movie.Poster}" alt="${movie.Title}">`
-        : `<div class="no-poster">🎬</div>`;
+function displayMovie(movie) {
+    var poster = movie.Poster && movie.Poster !== 'N/A'
+        ? '<img src="' + movie.Poster + '" alt="' + movie.Title + '">'
+        : '<div class="no-poster">🎬</div>';
 
-    const genres = movie.Genre ? movie.Genre.split(',').map(g =>
-        `<span class="genre-tag">${g.trim()}</span>`
-    ).join('') : '';
-
-    const isInWatchlist = state.watchlist.some(m => m.imdbID === movie.imdbID);
-
-    elements.movieDetailsContent.innerHTML = `
-        <div class="movie-poster-large">
-            ${posterHtml}
-        </div>
-        <div class="movie-info">
-            <h2 class="movie-title-large">${movie.Title}</h2>
-            
-            <div class="movie-meta-bar">
-                ${movie.imdbRating && movie.imdbRating !== 'N/A' ?
-            `<span class="movie-rating-large">⭐ ${movie.imdbRating}/10</span>` : ''}
-                <span>${movie.Year}</span>
-                ${movie.Runtime && movie.Runtime !== 'N/A' ? `<span>⏱️ ${movie.Runtime}</span>` : ''}
-                ${movie.Rated && movie.Rated !== 'N/A' ? `<span>${movie.Rated}</span>` : ''}
-            </div>
-            
-            ${genres ? `<div class="movie-genres">${genres}</div>` : ''}
-            
-            <p class="movie-plot">${movie.Plot || 'No plot available.'}</p>
-            
-            ${movie.Director && movie.Director !== 'N/A' ? `
-                <div class="movie-details-section">
-                    <h4>Director</h4>
-                    <p>${movie.Director}</p>
-                </div>
-            ` : ''}
-            
-            ${movie.Actors && movie.Actors !== 'N/A' ? `
-                <div class="movie-details-section">
-                    <h4>Cast</h4>
-                    <p>${movie.Actors}</p>
-                </div>
-            ` : ''}
-            
-            ${movie.Awards && movie.Awards !== 'N/A' ? `
-                <div class="movie-details-section">
-                    <h4>Awards</h4>
-                    <p>${movie.Awards}</p>
-                </div>
-            ` : ''}
-            
-            <div class="movie-actions">
-                <button class="btn btn-primary modal-watchlist-btn" data-imdb-id="${movie.imdbID}">
-                    ${isInWatchlist ? '✓ In Watchlist' : '+ Add to Watchlist'}
-                </button>
-                ${movie.Title ? `
-                    <a href="https://www.justwatch.com/in/search?q=${encodeURIComponent(movie.Title)}" 
-                       target="_blank" 
-                       class="btn btn-primary watch-btn">
-                        🎬 Watch Now
-                    </a>
-                ` : ''}
-                ${movie.imdbID ? `
-                    <a href="https://www.imdb.com/title/${movie.imdbID}/" 
-                       target="_blank" 
-                       class="btn btn-secondary">
-                        View on IMDB
-                    </a>
-                ` : ''}
-            </div>
-        </div>
-    `;
-
-    // Add event listener to watchlist button
-    const watchlistBtn = elements.movieDetailsContent.querySelector('.modal-watchlist-btn');
-    if (watchlistBtn) {
-        watchlistBtn.addEventListener('click', () => {
-            handleAddToWatchlist(movie.imdbID, watchlistBtn);
-        });
-    }
-}
-
-/**
- * Display similar movies in the modal
- * @param {Array} movies - Array of similar movie objects
- */
-function displaySimilarMovies(movies) {
-    if (!movies || movies.length === 0) {
-        elements.similarMoviesSection.classList.add('hidden');
-        return;
-    }
-
-    elements.similarMoviesSection.classList.remove('hidden');
-
-    const cardsHTML = movies.map(movie => {
-        const posterHtml = movie.Poster && movie.Poster !== 'N/A'
-            ? `<img src="${movie.Poster}" alt="${movie.Title}">`
-            : `<div class="no-poster">🎬</div>`;
-
-        return `
-            <div class="similar-movie-card" data-imdb-id="${movie.imdbID}">
-                <div class="similar-movie-poster">
-                    ${posterHtml}
-                </div>
-                <p class="similar-movie-title">${movie.Title}</p>
-            </div>
-        `;
-    }).join('');
-
-    elements.similarMoviesGrid.innerHTML = cardsHTML;
-
-    // Add click listeners to similar movie cards
-    elements.similarMoviesGrid.querySelectorAll('.similar-movie-card').forEach(card => {
-        card.addEventListener('click', () => {
-            const imdbId = card.dataset.imdbId;
-            openMovieDetails(imdbId);
-        });
-    });
-}
-
-/**
- * Close movie details modal
- */
-function closeMovieModal() {
-    elements.movieModal.classList.remove('active');
-    state.selectedMovie = null;
-}
-
-// ============================================
-// Watchlist Management Functions
-// ============================================
-
-/**
- * Load watchlist from localStorage
- */
-function loadWatchlist() {
-    const saved = localStorage.getItem(CONFIG.STORAGE_KEYS.WATCHLIST);
-    if (saved) {
-        try {
-            state.watchlist = JSON.parse(saved);
-        } catch (e) {
-            console.error('Error loading watchlist:', e);
-            state.watchlist = [];
+    var genres = '';
+    if (movie.Genre) {
+        var g = movie.Genre.split(',');
+        for (var i = 0; i < g.length; i++) {
+            genres += '<span class="genre-tag">' + g[i].trim() + '</span>';
         }
     }
-    updateWatchlistDisplay();
+
+    var inList = watchlist.some(function (m) { return m.imdbID === movie.imdbID; });
+
+    var html = '<div class="movie-poster-large">' + poster + '</div>' +
+        '<div class="movie-info">' +
+        '<h2 class="movie-title-large">' + movie.Title + '</h2>' +
+        '<div class="movie-meta-bar">';
+
+    if (movie.imdbRating && movie.imdbRating !== 'N/A') {
+        html += '<span class="movie-rating-large">⭐ ' + movie.imdbRating + '/10</span>';
+    }
+    html += '<span>' + movie.Year + '</span>';
+    if (movie.Runtime && movie.Runtime !== 'N/A') {
+        html += '<span>⏱️ ' + movie.Runtime + '</span>';
+    }
+    if (movie.Rated && movie.Rated !== 'N/A') {
+        html += '<span>' + movie.Rated + '</span>';
+    }
+    html += '</div>';
+
+    if (genres) {
+        html += '<div class="movie-genres">' + genres + '</div>';
+    }
+
+    html += '<p class="movie-plot">' + (movie.Plot || 'No plot available.') + '</p>';
+
+    if (movie.Director && movie.Director !== 'N/A') {
+        html += '<div class="movie-details-section"><h4>Director</h4><p>' + movie.Director + '</p></div>';
+    }
+    if (movie.Actors && movie.Actors !== 'N/A') {
+        html += '<div class="movie-details-section"><h4>Cast</h4><p>' + movie.Actors + '</p></div>';
+    }
+    if (movie.Awards && movie.Awards !== 'N/A') {
+        html += '<div class="movie-details-section"><h4>Awards</h4><p>' + movie.Awards + '</p></div>';
+    }
+
+    html += '<div class="movie-actions">' +
+        '<button class="btn btn-primary modal-watchlist-btn" data-imdb-id="' + movie.imdbID + '">' +
+        (inList ? '✓ In Watchlist' : '+ Add to Watchlist') + '</button>';
+
+    if (movie.Title) {
+        html += '<a href="https://www.justwatch.com/in/search?q=' + encodeURIComponent(movie.Title) + '" target="_blank" class="btn btn-primary watch-btn">🎬 Watch Now</a>';
+    }
+    if (movie.imdbID) {
+        html += '<a href="https://www.imdb.com/title/' + movie.imdbID + '/" target="_blank" class="btn btn-secondary">View on IMDB</a>';
+    }
+
+    html += '</div></div>';
+
+    movieDetails.innerHTML = html;
+
+    // add watchlist button handler
+    var btn = movieDetails.querySelector('.modal-watchlist-btn');
+    if (btn) {
+        btn.addEventListener('click', function () {
+            addToWatchlist(movie.imdbID, btn);
+        });
+    }
 }
 
-/**
- * Save watchlist to localStorage
- */
-function saveWatchlist() {
-    localStorage.setItem(CONFIG.STORAGE_KEYS.WATCHLIST, JSON.stringify(state.watchlist));
-}
-
-/**
- * Handle add to watchlist button click
- * @param {string} imdbId - The IMDB ID of the movie
- * @param {HTMLElement} button - The button element clicked
- */
-async function handleAddToWatchlist(imdbId, button) {
-    // Check if already in watchlist
-    const existingIndex = state.watchlist.findIndex(m => m.imdbID === imdbId);
-
-    if (existingIndex !== -1) {
-        // Remove from watchlist
-        state.watchlist.splice(existingIndex, 1);
-        saveWatchlist();
-        updateWatchlistDisplay();
-        updateWatchlistButtons(imdbId, false);
-        showToast('Movie removed from watchlist', 'success');
+function showSimilar(movieList) {
+    if (!movieList || movieList.length === 0) {
+        similarSection.classList.add('hidden');
         return;
     }
 
-    // Fetch movie details if not available
-    let movie = state.searchResults.find(m => m.imdbID === imdbId);
+    similarSection.classList.remove('hidden');
+
+    var html = '';
+    for (var i = 0; i < movieList.length; i++) {
+        var m = movieList[i];
+        var poster = m.Poster && m.Poster !== 'N/A'
+            ? '<img src="' + m.Poster + '" alt="' + m.Title + '">'
+            : '<div class="no-poster">🎬</div>';
+
+        html += '<div class="similar-movie-card" data-imdb-id="' + m.imdbID + '">' +
+            '<div class="similar-movie-poster">' + poster + '</div>' +
+            '<p class="similar-movie-title">' + m.Title + '</p></div>';
+    }
+
+    similarGrid.innerHTML = html;
+
+    // click handlers
+    var cards = similarGrid.querySelectorAll('.similar-movie-card');
+    for (var i = 0; i < cards.length; i++) {
+        cards[i].addEventListener('click', function () {
+            openMovie(this.dataset.imdbId);
+        });
+    }
+}
+
+function closeMovie() {
+    movieModal.classList.remove('active');
+    currentMovie = null;
+}
+
+// WATCHLIST STUFF
+
+function loadWatchlist() {
+    var saved = localStorage.getItem(WATCHLIST_KEY);
+    if (saved) {
+        try {
+            watchlist = JSON.parse(saved);
+        } catch (e) {
+            console.error('watchlist load error:', e);
+            watchlist = [];
+        }
+    }
+    updateWatchlistUI();
+}
+
+function saveWatchlist() {
+    localStorage.setItem(WATCHLIST_KEY, JSON.stringify(watchlist));
+}
+
+async function addToWatchlist(id, btn) {
+    // check if already in list
+    var idx = -1;
+    for (var i = 0; i < watchlist.length; i++) {
+        if (watchlist[i].imdbID === id) {
+            idx = i;
+            break;
+        }
+    }
+
+    if (idx !== -1) {
+        // remove from list
+        watchlist.splice(idx, 1);
+        saveWatchlist();
+        updateWatchlistUI();
+        updateButtons(id, false);
+        toast('Removed from watchlist', 'success');
+        return;
+    }
+
+    // find movie in results or fetch it
+    var movie = null;
+    for (var i = 0; i < movies.length; i++) {
+        if (movies[i].imdbID === id) {
+            movie = movies[i];
+            break;
+        }
+    }
 
     if (!movie || !movie.Runtime) {
-        // Fetch full details
-        const fullMovie = await fetchMovieDetails(imdbId);
-        if (fullMovie) {
-            movie = fullMovie;
-        } else {
-            showToast('Failed to add movie to watchlist', 'error');
+        movie = await getMovieDetails(id);
+        if (!movie) {
+            toast('Failed to add movie', 'error');
             return;
         }
     }
 
-    // Add to watchlist
-    state.watchlist.push({
+    // add to list
+    watchlist.push({
         imdbID: movie.imdbID,
         Title: movie.Title,
         Year: movie.Year,
@@ -898,436 +662,338 @@ async function handleAddToWatchlist(imdbId, button) {
     });
 
     saveWatchlist();
-    updateWatchlistDisplay();
-    updateWatchlistButtons(imdbId, true);
-    showToast(`"${movie.Title}" added to watchlist`, 'success');
+    updateWatchlistUI();
+    updateButtons(id, true);
+    toast('"' + movie.Title + '" added to watchlist', 'success');
 }
 
-/**
- * Update all watchlist buttons for a specific movie
- * @param {string} imdbId - The IMDB ID of the movie
- * @param {boolean} isInWatchlist - Whether the movie is in the watchlist
- */
-function updateWatchlistButtons(imdbId, isInWatchlist) {
-    // Update buttons in search results
-    document.querySelectorAll(`.add-watchlist-btn[data-imdb-id="${imdbId}"]`).forEach(btn => {
-        btn.classList.toggle('added', isInWatchlist);
-        btn.textContent = isInWatchlist ? '✓ In Watchlist' : '+ Watchlist';
-    });
+// update all buttons for a movie
+function updateButtons(id, inList) {
+    var btns = document.querySelectorAll('.add-watchlist-btn[data-imdb-id="' + id + '"]');
+    for (var i = 0; i < btns.length; i++) {
+        var b = btns[i];
+        if (inList) {
+            b.classList.add('added');
+            b.textContent = '✓ In Watchlist';
+        } else {
+            b.classList.remove('added');
+            b.textContent = '+ Watchlist';
+        }
+    }
 
-    // Update button in modal if same movie
-    const modalBtn = elements.movieDetailsContent.querySelector(`.modal-watchlist-btn[data-imdb-id="${imdbId}"]`);
+    // modal button
+    var modalBtn = movieDetails.querySelector('.modal-watchlist-btn[data-imdb-id="' + id + '"]');
     if (modalBtn) {
-        modalBtn.textContent = isInWatchlist ? '✓ In Watchlist' : '+ Add to Watchlist';
+        modalBtn.textContent = inList ? '✓ In Watchlist' : '+ Add to Watchlist';
     }
 }
 
-/**
- * Remove movie from watchlist by IMDB ID
- * @param {string} imdbId - The IMDB ID of the movie
- */
-function removeFromWatchlist(imdbId) {
-    const index = state.watchlist.findIndex(m => m.imdbID === imdbId);
-    if (index !== -1) {
-        const movie = state.watchlist[index];
-        state.watchlist.splice(index, 1);
-        saveWatchlist();
-        updateWatchlistDisplay();
-        updateWatchlistButtons(imdbId, false);
-        showToast(`"${movie.Title}" removed from watchlist`, 'success');
+function removeFromList(id) {
+    for (var i = 0; i < watchlist.length; i++) {
+        if (watchlist[i].imdbID === id) {
+            var movie = watchlist[i];
+            watchlist.splice(i, 1);
+            saveWatchlist();
+            updateWatchlistUI();
+            updateButtons(id, false);
+            toast('"' + movie.Title + '" removed', 'success');
+            break;
+        }
     }
 }
 
-/**
- * Update the watchlist display
- */
-function updateWatchlistDisplay() {
-    const count = state.watchlist.length;
-    elements.watchlistCount.textContent = `${count} movie${count !== 1 ? 's' : ''}`;
+function updateWatchlistUI() {
+    var count = watchlist.length;
+    watchlistCountSpan.textContent = count + ' movie' + (count !== 1 ? 's' : '');
 
     if (count === 0) {
-        elements.emptyWatchlist.classList.remove('hidden');
-        elements.watchlistItems.classList.add('hidden');
-        elements.runtimeDisplay.classList.add('hidden');
+        emptyWatchlist.classList.remove('hidden');
+        watchlistUl.classList.add('hidden');
+        runtimeDiv.classList.add('hidden');
         return;
     }
 
-    elements.emptyWatchlist.classList.add('hidden');
-    elements.watchlistItems.classList.remove('hidden');
-    elements.runtimeDisplay.classList.remove('hidden');
+    emptyWatchlist.classList.add('hidden');
+    watchlistUl.classList.remove('hidden');
+    runtimeDiv.classList.remove('hidden');
 
-    // Calculate total runtime
-    const totalMinutes = calculateTotalRuntime();
-    elements.totalRuntime.textContent = formatRuntime(totalMinutes);
+    // calc total runtime
+    var totalMins = getTotalRuntime();
+    totalRuntimeSpan.textContent = formatTime(totalMins);
 
-    // Generate watchlist items HTML
-    const itemsHTML = state.watchlist.map(movie => {
-        const posterHtml = movie.Poster && movie.Poster !== 'N/A'
-            ? `<img src="${movie.Poster}" alt="${movie.Title}">`
-            : `<div class="no-poster">🎬</div>`;
+    // build list html
+    var html = '';
+    for (var i = 0; i < watchlist.length; i++) {
+        var m = watchlist[i];
+        var poster = m.Poster && m.Poster !== 'N/A'
+            ? '<img src="' + m.Poster + '" alt="' + m.Title + '">'
+            : '<div class="no-poster">🎬</div>';
 
-        const runtime = parseRuntime(movie.Runtime);
-        const rating = movie.imdbRating && movie.imdbRating !== 'N/A' ? movie.imdbRating : '-';
+        var runtime = parseTime(m.Runtime);
+        var rating = m.imdbRating && m.imdbRating !== 'N/A' ? m.imdbRating : '-';
 
-        return `
-            <li class="watchlist-item" data-imdb-id="${movie.imdbID}">
-                <div class="watchlist-item-poster">
-                    ${posterHtml}
-                </div>
-                <div class="watchlist-item-info">
-                    <h5 class="watchlist-item-title">${movie.Title}</h5>
-                    <div class="watchlist-item-meta">
-                        <span class="watchlist-item-runtime">⏱️ ${runtime > 0 ? runtime + ' min' : 'N/A'}</span>
-                        <span class="watchlist-item-rating">⭐ ${rating}</span>
-                    </div>
-                </div>
-                <button class="watchlist-item-remove" data-imdb-id="${movie.imdbID}" title="Remove from watchlist">
-                    ×
-                </button>
-            </li>
-        `;
-    }).join('');
+        html += '<li class="watchlist-item" data-imdb-id="' + m.imdbID + '">' +
+            '<div class="watchlist-item-poster">' + poster + '</div>' +
+            '<div class="watchlist-item-info">' +
+            '<h5 class="watchlist-item-title">' + m.Title + '</h5>' +
+            '<div class="watchlist-item-meta">' +
+            '<span class="watchlist-item-runtime">⏱️ ' + (runtime > 0 ? runtime + ' min' : 'N/A') + '</span>' +
+            '<span class="watchlist-item-rating">⭐ ' + rating + '</span>' +
+            '</div></div>' +
+            '<button class="watchlist-item-remove" data-imdb-id="' + m.imdbID + '" title="Remove">×</button>' +
+            '</li>';
+    }
 
-    elements.watchlistItems.innerHTML = itemsHTML;
+    watchlistUl.innerHTML = html;
 
-    // Add click listeners to remove buttons
-    elements.watchlistItems.querySelectorAll('.watchlist-item-remove').forEach(btn => {
-        btn.addEventListener('click', () => {
-            removeFromWatchlist(btn.dataset.imdbId);
+    // remove button handlers
+    var removeBtns = watchlistUl.querySelectorAll('.watchlist-item-remove');
+    for (var i = 0; i < removeBtns.length; i++) {
+        removeBtns[i].addEventListener('click', function () {
+            removeFromList(this.dataset.imdbId);
         });
-    });
+    }
 }
 
-/**
- * Calculate total runtime of watchlist in minutes
- * @returns {number} - Total runtime in minutes
- */
-function calculateTotalRuntime() {
-    return state.watchlist.reduce((total, movie) => {
-        return total + parseRuntime(movie.Runtime);
-    }, 0);
+function getTotalRuntime() {
+    var total = 0;
+    for (var i = 0; i < watchlist.length; i++) {
+        total += parseTime(watchlist[i].Runtime);
+    }
+    return total;
 }
 
-// ============================================
-// Weekend Optimizer Functions
-// ============================================
+// OPTIMIZER
 
-/**
- * Run the weekend optimizer
- */
-function runOptimizer() {
-    const availableHours = parseFloat(elements.availableTimeInput.value);
+function optimize() {
+    var hrs = parseFloat(timeInput.value);
 
-    if (isNaN(availableHours) || availableHours <= 0) {
-        showToast('Please enter a valid available time in hours', 'warning');
+    if (isNaN(hrs) || hrs <= 0) {
+        toast('Enter a valid time in hours', 'warning');
         return;
     }
 
-    if (state.watchlist.length === 0) {
-        showToast('Your watchlist is empty. Add some movies first!', 'warning');
+    if (watchlist.length === 0) {
+        toast('Your watchlist is empty!', 'warning');
         return;
     }
 
-    const availableMinutes = availableHours * 60;
-    const totalRuntime = calculateTotalRuntime();
+    var availMins = hrs * 60;
+    var totalMins = getTotalRuntime();
 
-    elements.optimizationResults.classList.remove('hidden');
+    optimizeResults.classList.remove('hidden');
 
-    if (totalRuntime <= availableMinutes) {
-        // Success - all movies fit!
-        elements.optimizationResults.innerHTML = `
-            <div class="optimization-success">
-                <span class="result-icon">🎉</span>
-                <h4>Perfect! You can watch everything!</h4>
-                <p>Your watchlist runtime (${formatRuntime(totalRuntime)}) fits within your available time (${formatRuntime(availableMinutes)}).</p>
-                <p style="margin-top: 1rem; color: var(--color-text-muted);">
-                    You'll even have ${formatRuntime(availableMinutes - totalRuntime)} to spare!
-                </p>
-            </div>
-        `;
+    if (totalMins <= availMins) {
+        // everything fits!
+        optimizeResults.innerHTML = '<div class="optimization-success">' +
+            '<span class="result-icon">🎉</span>' +
+            '<h4>Perfect! You can watch everything!</h4>' +
+            '<p>Your watchlist (' + formatTime(totalMins) + ') fits in your available time (' + formatTime(availMins) + ').</p>' +
+            '<p style="margin-top: 1rem; color: var(--text-muted);">You have ' + formatTime(availMins - totalMins) + ' to spare!</p>' +
+            '</div>';
     } else {
-        // Need to suggest movies to drop
-        const suggestions = suggestMoviesToDrop(availableMinutes, totalRuntime);
-        displayOptimizationSuggestions(suggestions, totalRuntime, availableMinutes);
+        // need to drop some movies
+        var suggestions = findMoviesToDrop(availMins, totalMins);
+        showOptimizeSuggestions(suggestions, totalMins, availMins);
     }
 }
 
-/**
- * Calculate efficiency score for a movie
- * Efficiency = rating / runtime (higher is better)
- * @param {Object} movie - Movie object
- * @returns {number} - Efficiency score
- */
-function calculateEfficiency(movie) {
-    const runtime = parseRuntime(movie.Runtime);
-    const rating = parseFloat(movie.imdbRating) || 5; // Default to 5 if no rating
+// calc efficiency = rating / runtime
+function calcEfficiency(movie) {
+    var runtime = parseTime(movie.Runtime);
+    var rating = parseFloat(movie.imdbRating) || 5; // default to 5
 
     if (runtime <= 0) return 0;
-
-    // Efficiency formula: rating / runtime
-    // Higher rating = more valuable
-    // Higher runtime = less efficient (takes more time)
     return rating / runtime;
 }
 
-/**
- * Suggest movies to drop based on least efficiency
- * @param {number} availableMinutes - Available time in minutes
- * @param {number} totalRuntime - Current total runtime
- * @returns {Array} - Array of movies to suggest dropping
- */
-function suggestMoviesToDrop(availableMinutes, totalRuntime) {
-    // Calculate efficiency for each movie
-    const moviesWithEfficiency = state.watchlist.map(movie => ({
-        ...movie,
-        runtime: parseRuntime(movie.Runtime),
-        efficiency: calculateEfficiency(movie)
-    }));
-
-    // Sort by efficiency (lowest first - these should be dropped)
-    moviesWithEfficiency.sort((a, b) => a.efficiency - b.efficiency);
-
-    // Find movies to drop
-    const moviesToDrop = [];
-    let currentRuntime = totalRuntime;
-
-    for (const movie of moviesWithEfficiency) {
-        if (currentRuntime <= availableMinutes) break;
-
-        moviesToDrop.push(movie);
-        currentRuntime -= movie.runtime;
+function findMoviesToDrop(availMins, totalMins) {
+    // add efficiency to each movie
+    var moviesWithEff = [];
+    for (var i = 0; i < watchlist.length; i++) {
+        var m = watchlist[i];
+        moviesWithEff.push({
+            imdbID: m.imdbID,
+            Title: m.Title,
+            Runtime: m.Runtime,
+            imdbRating: m.imdbRating,
+            runtime: parseTime(m.Runtime),
+            efficiency: calcEfficiency(m)
+        });
     }
 
-    return {
-        moviesToDrop,
-        newRuntime: currentRuntime
-    };
-}
-
-/**
- * Display optimization suggestions
- * @param {Object} suggestions - Suggestions object with movies to drop
- * @param {number} totalRuntime - Current total runtime
- * @param {number} availableMinutes - Available time in minutes
- */
-function displayOptimizationSuggestions(suggestions, totalRuntime, availableMinutes) {
-    const { moviesToDrop, newRuntime } = suggestions;
-    const excessTime = totalRuntime - availableMinutes;
-
-    const suggestionsHTML = moviesToDrop.map(movie => `
-        <div class="suggestion-item">
-            <div class="suggestion-info">
-                <span class="suggestion-title">${movie.Title}</span>
-                <span class="suggestion-meta">
-                    ⏱️ ${movie.runtime} min | ⭐ ${movie.imdbRating || 'N/A'} | 
-                    Efficiency: ${movie.efficiency.toFixed(4)}
-                </span>
-            </div>
-            <div class="suggestion-action">
-                <button class="btn btn-danger btn-sm drop-movie-btn" data-imdb-id="${movie.imdbID}">
-                    Drop
-                </button>
-            </div>
-        </div>
-    `).join('');
-
-    elements.optimizationResults.innerHTML = `
-        <div class="optimization-warning">
-            <div class="result-header">
-                <span class="result-icon">⚠️</span>
-                <div class="result-message">
-                    <h4>Watchlist Exceeds Available Time</h4>
-                    <p>
-                        Your total watchlist runtime is <strong>${formatRuntime(totalRuntime)}</strong>.<br>
-                        Your available time is <strong>${formatRuntime(availableMinutes)}</strong>.<br>
-                        You need to free up <strong>${formatRuntime(excessTime)}</strong>.
-                    </p>
-                </div>
-            </div>
-            
-            <h5 style="margin-bottom: 0.5rem; color: var(--color-text-secondary);">
-                Suggested movies to drop (lowest efficiency first):
-            </h5>
-            
-            <div class="suggestions-list">
-                ${suggestionsHTML}
-            </div>
-            
-            <div class="new-runtime">
-                <p>After dropping suggested movies:</p>
-                <p><strong>New runtime: ${formatRuntime(newRuntime)}</strong> 
-                   (${newRuntime <= availableMinutes ? '✅ Fits!' : '❌ Still exceeds'})</p>
-            </div>
-        </div>
-    `;
-
-    // Add click listeners to drop buttons
-    elements.optimizationResults.querySelectorAll('.drop-movie-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            removeFromWatchlist(btn.dataset.imdbId);
-            // Re-run optimizer with updated watchlist
-            runOptimizer();
-        });
+    // sort by efficiency (lowest first)
+    moviesWithEff.sort(function (a, b) {
+        return a.efficiency - b.efficiency;
     });
+
+    // find which to drop
+    var toDrop = [];
+    var current = totalMins;
+
+    for (var i = 0; i < moviesWithEff.length; i++) {
+        if (current <= availMins) break;
+        toDrop.push(moviesWithEff[i]);
+        current -= moviesWithEff[i].runtime;
+    }
+
+    return { moviesToDrop: toDrop, newRuntime: current };
 }
 
-// ============================================
-// API Configuration Modal Functions
-// ============================================
+function showOptimizeSuggestions(suggestions, totalMins, availMins) {
+    var toDrop = suggestions.moviesToDrop;
+    var newRuntime = suggestions.newRuntime;
+    var excess = totalMins - availMins;
 
-/**
- * Show API configuration modal
- */
-function showApiConfigModal() {
-    elements.apiConfigModal.classList.add('active');
+    var suggestHtml = '';
+    for (var i = 0; i < toDrop.length; i++) {
+        var m = toDrop[i];
+        suggestHtml += '<div class="suggestion-item">' +
+            '<div class="suggestion-info">' +
+            '<span class="suggestion-title">' + m.Title + '</span>' +
+            '<span class="suggestion-meta">⏱️ ' + m.runtime + ' min | ⭐ ' + (m.imdbRating || 'N/A') + ' | Efficiency: ' + m.efficiency.toFixed(4) + '</span>' +
+            '</div>' +
+            '<div class="suggestion-action">' +
+            '<button class="btn btn-danger btn-sm drop-btn" data-imdb-id="' + m.imdbID + '">Drop</button>' +
+            '</div></div>';
+    }
 
-    // Pre-fill existing keys if available
-    const omdbKey = getApiKey(CONFIG.STORAGE_KEYS.OMDB_API_KEY);
-    const geminiKey = getApiKey(CONFIG.STORAGE_KEYS.GEMINI_API_KEY);
+    optimizeResults.innerHTML = '<div class="optimization-warning">' +
+        '<div class="result-header">' +
+        '<span class="result-icon">⚠️</span>' +
+        '<div class="result-message">' +
+        '<h4>Watchlist Exceeds Available Time</h4>' +
+        '<p>Total: <strong>' + formatTime(totalMins) + '</strong><br>' +
+        'Available: <strong>' + formatTime(availMins) + '</strong><br>' +
+        'Need to free up: <strong>' + formatTime(excess) + '</strong></p>' +
+        '</div></div>' +
+        '<h5 style="margin-bottom: 0.5rem; color: var(--text-gray);">Suggested movies to drop (lowest efficiency first):</h5>' +
+        '<div class="suggestions-list">' + suggestHtml + '</div>' +
+        '<div class="new-runtime">' +
+        '<p>After dropping these:</p>' +
+        '<p><strong>New runtime: ' + formatTime(newRuntime) + '</strong> (' + (newRuntime <= availMins ? '✅ Fits!' : '❌ Still exceeds') + ')</p>' +
+        '</div></div>';
 
-    if (omdbKey) elements.omdbApiKeyInput.value = omdbKey;
-    if (geminiKey) elements.geminiApiKeyInput.value = geminiKey;
+    // drop button handlers
+    var dropBtns = optimizeResults.querySelectorAll('.drop-btn');
+    for (var i = 0; i < dropBtns.length; i++) {
+        dropBtns[i].addEventListener('click', function () {
+            removeFromList(this.dataset.imdbId);
+            optimize(); // re-run
+        });
+    }
 }
 
-/**
- * Hide API configuration modal
- */
-function hideApiConfigModal() {
-    elements.apiConfigModal.classList.remove('active');
+// API CONFIG MODAL
+
+function showApiModal() {
+    apiModal.classList.add('active');
+
+    // fill in existing keys
+    var omdb = getKey(OMDB_KEY);
+    var gemini = getKey(GEMINI_KEY);
+
+    if (omdb) omdbInput.value = omdb;
+    if (gemini) geminiInput.value = gemini;
 }
 
-/**
- * Save API keys from the configuration modal
- */
-function saveApiKeysFromModal() {
-    const omdbKey = elements.omdbApiKeyInput.value.trim();
-    const geminiKey = elements.geminiApiKeyInput.value.trim();
+function hideApiModal() {
+    apiModal.classList.remove('active');
+}
 
-    if (!omdbKey) {
-        showToast('OMDB API key is required for movie search', 'error');
+function saveKeys() {
+    var omdb = omdbInput.value.trim();
+    var gemini = geminiInput.value.trim();
+
+    if (!omdb) {
+        toast('OMDB API key is required', 'error');
         return;
     }
 
-    setApiKey(CONFIG.STORAGE_KEYS.OMDB_API_KEY, omdbKey);
-
-    if (geminiKey) {
-        setApiKey(CONFIG.STORAGE_KEYS.GEMINI_API_KEY, geminiKey);
+    saveKey(OMDB_KEY, omdb);
+    if (gemini) {
+        saveKey(GEMINI_KEY, gemini);
     }
 
-    hideApiConfigModal();
-    showToast('API keys saved successfully!', 'success');
+    hideApiModal();
+    toast('API keys saved!', 'success');
 }
 
-// ============================================
-// Event Listeners Setup
-// ============================================
+// SET UP EVENT LISTENERS
 
-/**
- * Initialize all event listeners
- */
-function initEventListeners() {
-    // Search tabs
-    elements.searchTabs.forEach(tab => {
-        tab.addEventListener('click', () => {
-            // Update active tab
-            elements.searchTabs.forEach(t => t.classList.remove('active'));
-            tab.classList.add('active');
+function setupEvents() {
+    // search tabs
+    for (var i = 0; i < searchTabs.length; i++) {
+        searchTabs[i].addEventListener('click', function () {
+            for (var j = 0; j < searchTabs.length; j++) {
+                searchTabs[j].classList.remove('active');
+            }
+            this.classList.add('active');
+            searchType = this.dataset.type;
+            searchInput.placeholder = placeholders[searchType];
 
-            // Update search type
-            state.currentSearchType = tab.dataset.type;
-
-            // Update placeholder
-            elements.searchInput.placeholder = SEARCH_PLACEHOLDERS[state.currentSearchType];
-
-            // Show/hide mood hint
-            elements.moodHint.classList.toggle('hidden', state.currentSearchType !== 'mood');
+            if (searchType === 'mood') {
+                moodHint.classList.remove('hidden');
+            } else {
+                moodHint.classList.add('hidden');
+            }
         });
+    }
+
+    // search button and enter key
+    searchBtn.addEventListener('click', doSearch);
+    searchInput.addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') doSearch();
     });
 
-    // Search button
-    elements.searchBtn.addEventListener('click', handleSearch);
-
-    // Search input enter key
-    elements.searchInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            handleSearch();
-        }
+    // modal close
+    closeModalBtn.addEventListener('click', closeMovie);
+    movieModal.addEventListener('click', function (e) {
+        if (e.target === movieModal) closeMovie();
     });
 
-    // Close modal button
-    elements.closeModal.addEventListener('click', closeMovieModal);
-
-    // Close modal on backdrop click
-    elements.movieModal.addEventListener('click', (e) => {
-        if (e.target === elements.movieModal) {
-            closeMovieModal();
-        }
-    });
-
-    // Close modal on escape key
-    document.addEventListener('keydown', (e) => {
+    // escape key
+    document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape') {
-            if (elements.movieModal.classList.contains('active')) {
-                closeMovieModal();
-            }
-            if (elements.apiConfigModal.classList.contains('active')) {
-                hideApiConfigModal();
-            }
+            if (movieModal.classList.contains('active')) closeMovie();
+            if (apiModal.classList.contains('active')) hideApiModal();
         }
     });
 
-    // Settings button
-    elements.settingsBtn.addEventListener('click', showApiConfigModal);
+    // settings
+    settingsBtn.addEventListener('click', showApiModal);
+    saveKeysBtn.addEventListener('click', saveKeys);
 
-    // Save API keys button
-    elements.saveApiKeysBtn.addEventListener('click', saveApiKeysFromModal);
-
-    // Close API modal on backdrop click
-    elements.apiConfigModal.addEventListener('click', (e) => {
-        if (e.target === elements.apiConfigModal) {
-            // Only close if keys are configured
-            if (areApiKeysConfigured()) {
-                hideApiConfigModal();
-            }
+    apiModal.addEventListener('click', function (e) {
+        if (e.target === apiModal && hasApiKeys()) {
+            hideApiModal();
         }
     });
 
-    // Optimize button
-    elements.optimizeBtn.addEventListener('click', runOptimizer);
-
-    // Available time input enter key
-    elements.availableTimeInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            runOptimizer();
-        }
+    // optimizer
+    optimizeBtn.addEventListener('click', optimize);
+    timeInput.addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') optimize();
     });
 }
 
-// ============================================
-// Application Initialization
-// ============================================
+// START THE APP
 
-/**
- * Initialize the application
- */
 function init() {
-    console.log('🎬 CineMatch - Smart Movie Recommendation Tool');
-    console.log('Initializing application...');
+    console.log('CineMatch starting up...');
 
-    // Initialize event listeners
-    initEventListeners();
-
-    // Load watchlist from localStorage
+    setupEvents();
     loadWatchlist();
 
-    // Check if API keys are configured
-    if (!areApiKeysConfigured()) {
-        // Show API configuration modal on first visit
-        showApiConfigModal();
+    // show api modal if no keys
+    if (!hasApiKeys()) {
+        showApiModal();
     }
 
-    console.log('Application initialized successfully!');
+    console.log('App ready!');
 }
 
-// Start the application when DOM is ready
+// run when page loads
 document.addEventListener('DOMContentLoaded', init);
+
+
