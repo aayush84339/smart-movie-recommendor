@@ -37,13 +37,10 @@ A movie search website I made for the DevCom's developer assignment. It lets you
 
 ## Files
 
-```
-smart movie recommendor/
-├── index.html   - main html page
-├── styles.css   - all the css styling
-├── app.js       - javascript code
-└── README.md    - this file
-```
+index.html   - main html page
+styles.css   - all the css styling
+app.js       - javascript code
+README.md    - this file
 
 ## Features explained
 
@@ -84,3 +81,4 @@ The optimizer uses efficiency = rating / runtime to decide which movies are leas
 - Fonts from Google Fonts
 
 ---
+
