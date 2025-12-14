@@ -74,7 +74,13 @@ The optimizer uses efficiency = rating / runtime to decide which movies are leas
 - Mood search needs Gemini API key to work well
 - Some movies don't have runtime info
 
+## Limitations
+- Device-specific: If user opens on phone after using desktop, watchlist won't be there
+- Browser-specific: Chrome and Firefox have separate localStorage
+- No backup: If browser data is cleared, watchlist is gone
+
 ---
+
 
 
 
